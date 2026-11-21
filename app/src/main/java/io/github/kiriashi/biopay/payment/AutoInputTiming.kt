@@ -22,10 +22,10 @@ package io.github.kiriashi.biopay.payment
 /** Bounded variation between successive password digits. Pure JVM: no Android dependencies. */
 internal object AutoInputTiming {
 
-    const val GAUSSIAN_MEAN_MS = 70.0
+    const val GAUSSIAN_MEAN_MS = 30.0
     const val GAUSSIAN_STDDEV = 3.33
-    const val GAUSSIAN_MIN_MS = 60L
-    const val GAUSSIAN_MAX_MS = 80L
+    const val GAUSSIAN_MIN_MS = 25L
+    const val GAUSSIAN_MAX_MS = 35L
 
     fun gaussianDelay(sample: Double): Long =
         (sample * GAUSSIAN_STDDEV + GAUSSIAN_MEAN_MS).toLong().coerceIn(GAUSSIAN_MIN_MS, GAUSSIAN_MAX_MS)
