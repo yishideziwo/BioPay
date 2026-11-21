@@ -25,7 +25,8 @@ object BiometricAuth {
         keyboardView: ViewGroup,
         encodedPassword: String,
         state: AppRuntime,
-        sessionId: Long
+        sessionId: Long,
+        preparedOperation: PasswordCipher.DecryptOperation? = null
     ): Boolean {
         val config = state.session.currentConfig() ?: return false
         if (state.isClosed || !state.session.isCurrentSession(sessionId) ||
@@ -52,7 +53,7 @@ object BiometricAuth {
                 work = {
                     if (!state.isClosed && state.session.isCurrentSession(sessionId) &&
                         state.session.isCurrentAuthentication(attempt.id)) {
-                        measureCrypto("prepare") {
+                        preparedOperation ?: measureCrypto("prepare") {
                             PasswordCipher.createDecryptOperation(encodedPassword, state.adapter.app.packageName)
                         }
                     } else null
