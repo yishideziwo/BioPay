@@ -15,6 +15,7 @@ import io.github.kiriashi.biopay.core.log.ModuleLog
 import io.github.kiriashi.biopay.core.util.MainTasks
 import io.github.kiriashi.biopay.core.util.findActivity
 import io.github.kiriashi.biopay.runtime.AppRuntime
+import io.github.kiriashi.biopay.storage.PasswordCipher
 import java.lang.ref.WeakReference
 
 class PaymentFlow(private val state: AppRuntime) {
@@ -23,6 +24,9 @@ class PaymentFlow(private val state: AppRuntime) {
     private var attachedViewRef: WeakReference<ViewGroup>? = null
     private val setupLock = Any()
     private val tasks = MainTasks()
+    // 预生成的解密 Cipher：在键盘出现时后台生成，attach 后直接用于弹窗，省掉 Keystore 初始化延迟
+    @Volatile private var preparedOperation: PasswordCipher.DecryptOperation? = null
+    private var preparedSessionId: Long = 0L
 
     fun setupBiometricAuth(
         keyboardView: ViewGroup, encodedPassword: String,
@@ -42,6 +46,26 @@ class PaymentFlow(private val state: AppRuntime) {
             // Visual payment screens are watched by VisualPaymentMonitor. Reattaching
             // their keyboard must not start a second automatic prompt after cancel.
             if (startImmediately && state.adapter.app == PaymentApp.WECHAT) {
+                // 预生成 Cipher：键盘一出现就后台建密钥，缩短 attach 后指纹弹窗的延迟
+                val sid = id
+                val pkg = state.adapter.app.packageName
+                state.paymentWorker.submit(
+                    work = { PasswordCipher.createDecryptOperation(encodedPassword, pkg) },
+                    discard = { it?.ciphertext?.fill(0) }
+                ) { result ->
+                    val op = result.getOrNull()
+                    if (op != null) {
+                        synchronized(attachLock) {
+                            if (state.session.isCurrentSession(sid)) {
+                                preparedOperation?.ciphertext?.fill(0)
+                                preparedOperation = op
+                                preparedSessionId = sid
+                            } else {
+                                op.ciphertext.fill(0)
+                            }
+                        }
+                    }
+                }
                 synchronized(attachLock) {
                     val listener = attachListener ?: KeyboardAttachListener().also { attachListener = it }
                     listener.keyboardView = keyboardView
@@ -117,8 +141,15 @@ class PaymentFlow(private val state: AppRuntime) {
                     !PasswordAutoInput.isInProgress(sessionId)) {
                     val encoded = state.prefs.activePassword()
                     if (!encoded.isNullOrEmpty()) {
-                        ModuleLog.d { "onViewAttached: triggering auth, view=${kv.hashCode()}" }
-                        BiometricAuth.triggerBiometricAuth(kv, encoded, state, sessionId)
+                        val prepared = synchronized(attachLock) {
+                            if (preparedSessionId == sessionId) preparedOperation.also { preparedOperation = null } else null
+                        }
+                        ModuleLog.d { "onViewAttached: triggering auth, view=${kv.hashCode()}, prepared=${prepared != null}" }
+                        if (prepared != null) {
+                            BiometricAuth.triggerBiometricAuth(kv, encoded, state, sessionId, prepared)
+                        } else {
+                            BiometricAuth.triggerBiometricAuth(kv, encoded, state, sessionId)
+                        }
                     }
                 } else {
                     ModuleLog.d { "onViewAttached: biometric in progress, skipping, view=${kv.hashCode()}" }
