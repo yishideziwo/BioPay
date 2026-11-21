@@ -243,7 +243,7 @@ object PasswordAutoInput {
                            val state: AppRuntime, val sessionId: Long, val config: PaymentConfig) : Runnable {
         private var index = 0
         fun scheduleNext() {
-            val delay = if (index == 0) 0L else if (index == keys.size) 250L else
+            val delay = if (index == 0) 0L else if (index == keys.size) 50L else
                 AutoInputTiming.gaussianDelay(ThreadLocalRandom.current().nextGaussian())
             tasks.post(this, delay)
         }
